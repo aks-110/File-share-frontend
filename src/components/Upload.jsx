@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
 function Upload() {
   const [textInput, setTextInput] = useState("");
   const [textFileName, setTextFileName] = useState("");
@@ -69,6 +70,11 @@ function Upload() {
         setReady(true);
       }
     }
+
+    const savedResume = localStorage.getItem("resumeData");
+    if (savedResume) {
+      setPendingResume(JSON.parse(savedResume));
+    }
   }, []);
 
   useEffect(() => {
@@ -112,19 +118,14 @@ function Upload() {
 
     if (uploadMetaRef.current) {
       try {
-        // await axios.post(
-        //   "http://localhost:3000/cancel-upload",
-        //   uploadMetaRef.current,
-        // );
-
         await axios.post(`${backendUrl}/cancel-upload`, uploadMetaRef.current);
-
       } catch (err) {
         console.error("Failed to clean up server data", err);
       }
     }
 
     setStatus("Upload cancelled");
+    toast.error("Upload Cancelled");
     uploadMetaRef.current = null;
     localStorage.removeItem("resumeData");
   };
@@ -135,9 +136,16 @@ function Upload() {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
+    setStatus("Paused");
+    toast.success("Upload Paused");
   };
 
-  const executeResume = async (activeFile, meta) => {
+  // 🔥 CORE FIX: existingParts parameter add kiya aur progress sync kiya
+  const executeResume = async (
+    activeFile,
+    meta,
+    existingParts = uploadedParts,
+  ) => {
     setPaused(false);
     isPausedRef.current = false;
     setLoading(true);
@@ -148,12 +156,6 @@ function Upload() {
 
     try {
       const totalParts = Math.ceil(activeFile.size / meta.partsize);
-
-      // const res = await axios.post("http://localhost:3000/multipart", {
-      //   key: meta.key,
-      //   uploadId: meta.uploadId,
-      //   parts: totalParts,
-      // });
 
       const res = await axios.post(
         `${backendUrl}/multipart`,
@@ -166,8 +168,15 @@ function Upload() {
       );
 
       const urls = res.data.urls;
-      const completedParts = [...uploadedParts];
-      let totalBytesUploaded = 0;
+      const completedParts = [...existingParts];
+
+      // ✅ LOGIC FIX: Loop start hone se pehle progress calculate karein
+      let totalBytesUploaded = completedParts.length * meta.partsize;
+      let initialPercent = Math.min(
+        Math.round((totalBytesUploaded * 100) / activeFile.size),
+        100,
+      );
+      setProgress(initialPercent);
 
       for (let i = 0; i < urls.length; i++) {
         if (isPausedRef.current) {
@@ -177,8 +186,7 @@ function Upload() {
         }
 
         if (completedParts.some((p) => p.PartNumber === i + 1)) {
-          totalBytesUploaded += meta.partsize;
-          continue;
+          continue; // Yeh hissa pehle hi count ho chuka hai, skip karein
         }
 
         const start = i * meta.partsize;
@@ -192,17 +200,12 @@ function Upload() {
             const percent = Math.round(
               (currentOverallLoaded * 100) / activeFile.size,
             );
-            setProgress(percent);
+            setProgress(Math.min(percent, 100));
             setStatus(`Uploading part ${i + 1}/${totalParts}`);
           },
         });
 
         const etag = chunkRes.headers.etag || chunkRes.headers.ETag;
-
-        // await axios.post("http://localhost:3000/save-progress", {
-        //   id: meta.id,
-        //   partNumber: i + 1,
-        // });
 
         await axios.post(
           `${backendUrl}/save-progress`,
@@ -224,16 +227,6 @@ function Upload() {
 
       setStatus("Finalizing upload...");
 
-      // await axios.post(
-      //   "http://localhost:3000/completeMultipart",
-      //   {
-      //     uploadId: meta.uploadId,
-      //     key: meta.key,
-      //     parts: completedParts,
-      //   },
-      //   reqConfig,
-      // );
-
       await axios.post(
         `${backendUrl}/completeMultipart`,
         {
@@ -243,12 +236,10 @@ function Upload() {
         },
         reqConfig,
       );
-      
-
 
       localStorage.removeItem("resumeData");
+      setPendingResume(null);
 
-      // let finalLink = `http://localhost:5173/download/${meta.id}`;
       let finalLink = `${window.location.origin}/download/${meta.id}`;
 
       let expiry = activeFile.size / (1024 * 1024) < 10 ? 3600 : 86400;
@@ -274,6 +265,7 @@ function Upload() {
       setReady(true);
       setStatus("");
       uploadMetaRef.current = null;
+      toast.success("Upload Successfully Completed!");
     } catch (err) {
       if (axios.isCancel(err)) {
         if (isPausedRef.current) setStatus("Paused");
@@ -308,21 +300,42 @@ function Upload() {
     }
 
     if (!activeFile || !password) {
-      setStatus("Please provide a file or text content, and a password.");
+      toast.error("Please provide a file or text content, and a password.");
       return;
     }
-    if (
+
+    // 🔥 CROSS-SESSION RESUME LOGIC INTERCEPTION
+    const isPausedUpload =
       paused &&
       uploadMetaRef.current &&
-      uploadMetaRef.current.strategy === "multipart"
-    ) {
-      const meta = JSON.parse(localStorage.getItem("resumeData"));
-      if (meta) {
-        executeResume(activeFile, meta);
-        return;
+      uploadMetaRef.current.strategy === "multipart";
+    const meta =
+      pendingResume || JSON.parse(localStorage.getItem("resumeData"));
+
+    if ((isPausedUpload || pendingResume) && meta) {
+      setLoading(true);
+      setStatus("Syncing progress with server...");
+      try {
+        const progRes = await axios.get(
+          `${backendUrl}/get-progress?id=${meta.id}`,
+        );
+        const serverParts = progRes.data.uploadedParts.map((num) => ({
+          PartNumber: num,
+        }));
+        setUploadedParts(serverParts);
+        await executeResume(activeFile, meta, serverParts);
+      } catch (err) {
+        console.error("Progress sync failed", err);
+        toast.error("Failed to sync progress. Starting fresh.");
+        localStorage.removeItem("resumeData");
+        setPendingResume(null);
+        setPaused(false);
+        isPausedRef.current = false;
       }
+      if (pendingResume || isPausedUpload) return; // Fresh upload aage proceed na kare
     }
 
+    // --- FRESH UPLOAD LOGIC ---
     setPaused(false);
     isPausedRef.current = false;
     setLoading(true);
@@ -336,18 +349,6 @@ function Upload() {
       const fileSizeMB = activeFile.size / (1024 * 1024);
       let expiry = fileSizeMB < 10 ? 3600 : 86400;
 
-      // const res = await axios.post(
-      //   "http://localhost:3000/geturl",
-      //   {
-      //     fileName: activeFile.name,
-      //     fileType: activeFile.type,
-      //     password: password,
-      //     filesize: activeFile.size,
-      //     expiry: expiry,
-      //   },
-      //   reqConfig,
-      // );
-
       const res = await axios.post(
         `${backendUrl}/geturl`,
         {
@@ -360,35 +361,31 @@ function Upload() {
         reqConfig,
       );
 
-
       const { strategy, uploadUrl, id, qrDataUrl, partsize, key } = res.data;
 
       if (strategy === "multipart") {
-        localStorage.setItem(
-          "resumeData",
-          JSON.stringify({
-            id,
-            key,
-            uploadId: uploadUrl,
-            partsize,
-            fileSize: activeFile.size,
-            fileName: activeFile.name,
-            qrCode: qrDataUrl,
-            timestamp: Date.now(),
-          }),
-        );
+        const newMeta = {
+          id,
+          key,
+          uploadId: uploadUrl,
+          partsize,
+          fileSize: activeFile.size,
+          fileName: activeFile.name,
+          qrCode: qrDataUrl,
+          timestamp: Date.now(),
+        };
+        localStorage.setItem("resumeData", JSON.stringify(newMeta));
+        uploadMetaRef.current = { ...newMeta, strategy };
+      } else {
+        uploadMetaRef.current = {
+          id,
+          key,
+          uploadId: null,
+          strategy,
+        };
       }
 
-      uploadMetaRef.current = {
-        id,
-        key,
-        uploadId: strategy === "multipart" ? uploadUrl : null,
-        strategy,
-      };
-
-      // let finalLink = `http://localhost:5173/download/${id}`;
       let finalLink = `${window.location.origin}/download/${id}`;
-
       let expireTime = Date.now() + expiry * 1000;
 
       if (strategy === "single") {
@@ -405,19 +402,11 @@ function Upload() {
         const uploadId = uploadUrl;
         const totalParts = Math.ceil(activeFile.size / partsize);
 
-        // const multiRes = await axios.post(
-        //   "http://localhost:3000/multipart",
-        //   { key, uploadId, parts: totalParts },
-        //   reqConfig,
-        // );
-
         const multiRes = await axios.post(
           `${backendUrl}/multipart`,
           { key, uploadId, parts: totalParts },
           reqConfig,
         );
-
-
 
         const urls = multiRes.data.urls;
         let totalBytesUploaded = 0;
@@ -447,16 +436,10 @@ function Upload() {
           });
           const etag = chunkRes.headers.etag || chunkRes.headers.ETag;
 
-          // await axios.post("http://localhost:3000/save-progress", {
-          //   id,
-          //   partNumber: i + 1,
-          // });
-
           await axios.post(`${backendUrl}/save-progress`, {
             id,
             partNumber: i + 1,
           });
-
 
           uploadedPartsList.push({
             PartNumber: i + 1,
@@ -468,18 +451,11 @@ function Upload() {
 
         setStatus("Finalizing upload...");
 
-        // await axios.post(
-        //   "http://localhost:3000/completeMultipart",
-        //   { uploadId, key, parts: uploadedPartsList },
-        //   reqConfig,
-        // );
-
         await axios.post(
           `${backendUrl}/completeMultipart`,
           { uploadId, key, parts: uploadedPartsList },
           reqConfig,
         );
-        
 
         localStorage.removeItem("resumeData");
       }
@@ -505,6 +481,7 @@ function Upload() {
       setReady(true);
       setStatus("");
       uploadMetaRef.current = null;
+      toast.success("Upload Successful!");
     } catch (err) {
       if (axios.isCancel(err)) {
         if (isPausedRef.current) setStatus("Paused");
@@ -526,6 +503,7 @@ function Upload() {
   const copyLink = () => {
     navigator.clipboard.writeText(downloadLink);
     setCopied(true);
+    toast.success("Link copied!");
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -858,7 +836,7 @@ function Upload() {
             </button>
           )}
 
-          {(loading || paused) && (
+          {(loading || paused || pendingResume) && (
             <div style={{ marginTop: "24px" }}>
               <div
                 style={{
@@ -921,7 +899,7 @@ function Upload() {
 
               <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
                 <button
-                  onClick={paused ? handleUpload : handlePause}
+                  onClick={paused || pendingResume ? handleUpload : handlePause}
                   style={{
                     flex: 1,
                     padding: "12px",
@@ -933,7 +911,7 @@ function Upload() {
                     cursor: "pointer",
                   }}
                 >
-                  {paused ? "Resume" : "Pause"}
+                  {paused || pendingResume ? "Resume" : "Pause"}
                 </button>
 
                 <button
