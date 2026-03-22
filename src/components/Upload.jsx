@@ -23,31 +23,23 @@ function Upload() {
   const [password, setPassword] = useState("");
   const [uploadedParts, setUploadedParts] = useState([]);
   const [paused, setPaused] = useState(false);
-
-  // Replaces the old resumeMeta. Triggers the auto-resume UI if valid.
   const [pendingResume, setPendingResume] = useState(null);
-
   const [fileId, setFileId] = useState("");
   const [qrCode, setQrCode] = useState("");
   const [downloadLink, setDownloadLink] = useState("");
-
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
   const [copied, setCopied] = useState(false);
-
   const [expiryTime, setExpiryTime] = useState(null);
   const [initialTime, setInitialTime] = useState(0);
-
   const [progress, setProgress] = useState(0);
 
-  // Refs
   const abortControllerRef = useRef(null);
   const uploadMetaRef = useRef(null);
   const fileInputRef = useRef(null);
   const isPausedRef = useRef(false);
 
-  // Format file sizes clearly
   const formatSize = (bytes) => {
     if (bytes === 0) return "0 Bytes";
     if (bytes < 1024) return `${bytes} Bytes`;
@@ -79,7 +71,6 @@ function Upload() {
 
   useEffect(() => {
     if (!expiryTime) return;
-
     const interval = setInterval(() => {
       if (Date.now() > expiryTime) {
         clearInterval(interval);
@@ -87,7 +78,6 @@ function Upload() {
         setReady(false);
       }
     }, 10000);
-
     return () => clearInterval(interval);
   }, [expiryTime]);
 
@@ -95,9 +85,7 @@ function Upload() {
     const handleBeforeUnload = () => {
       localStorage.removeItem("resumeData");
     };
-
     window.addEventListener("beforeunload", handleBeforeUnload);
-
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
@@ -140,7 +128,6 @@ function Upload() {
     toast.success("Upload Paused");
   };
 
-  // 🔥 CORE FIX: existingParts parameter add kiya aur progress sync kiya
   const executeResume = async (
     activeFile,
     meta,
@@ -159,18 +146,14 @@ function Upload() {
 
       const res = await axios.post(
         `${backendUrl}/multipart`,
-        {
-          key: meta.key,
-          uploadId: meta.uploadId,
-          parts: totalParts,
-        },
+        { key: meta.key, uploadId: meta.uploadId, parts: totalParts },
         reqConfig,
       );
 
       const urls = res.data.urls;
       const completedParts = [...existingParts];
 
-      // ✅ LOGIC FIX: Loop start hone se pehle progress calculate karein
+      // 🔥 FIX: Setup initial progress bar correctly before loop starts
       let totalBytesUploaded = completedParts.length * meta.partsize;
       let initialPercent = Math.min(
         Math.round((totalBytesUploaded * 100) / activeFile.size),
@@ -186,7 +169,7 @@ function Upload() {
         }
 
         if (completedParts.some((p) => p.PartNumber === i + 1)) {
-          continue; // Yeh hissa pehle hi count ho chuka hai, skip karein
+          continue;
         }
 
         const start = i * meta.partsize;
@@ -209,18 +192,11 @@ function Upload() {
 
         await axios.post(
           `${backendUrl}/save-progress`,
-          {
-            id: meta.id,
-            partNumber: i + 1,
-          },
+          { id: meta.id, partNumber: i + 1 },
           reqConfig,
         );
 
-        completedParts.push({
-          PartNumber: i + 1,
-          ETag: etag,
-        });
-
+        completedParts.push({ PartNumber: i + 1, ETag: etag });
         setUploadedParts([...completedParts]);
         totalBytesUploaded += chunk.size;
       }
@@ -229,11 +205,7 @@ function Upload() {
 
       await axios.post(
         `${backendUrl}/completeMultipart`,
-        {
-          uploadId: meta.uploadId,
-          key: meta.key,
-          parts: completedParts,
-        },
+        { uploadId: meta.uploadId, key: meta.key, parts: completedParts },
         reqConfig,
       );
 
@@ -241,7 +213,6 @@ function Upload() {
       setPendingResume(null);
 
       let finalLink = `${window.location.origin}/download/${meta.id}`;
-
       let expiry = activeFile.size / (1024 * 1024) < 10 ? 3600 : 86400;
       let expireTime = Date.now() + expiry * 1000;
 
@@ -292,7 +263,6 @@ function Upload() {
       const textBlob = new Blob([textInput], {
         type: "text/plain;charset=utf-8",
       });
-
       activeFile = new File([textBlob], finalName, {
         type: "text/plain",
         lastModified: Date.now(),
@@ -332,7 +302,7 @@ function Upload() {
         setPaused(false);
         isPausedRef.current = false;
       }
-      if (pendingResume || isPausedUpload) return; // Fresh upload aage proceed na kare
+      if (pendingResume || isPausedUpload) return;
     }
 
     // --- FRESH UPLOAD LOGIC ---
@@ -377,12 +347,7 @@ function Upload() {
         localStorage.setItem("resumeData", JSON.stringify(newMeta));
         uploadMetaRef.current = { ...newMeta, strategy };
       } else {
-        uploadMetaRef.current = {
-          id,
-          key,
-          uploadId: null,
-          strategy,
-        };
+        uploadMetaRef.current = { id, key, uploadId: null, strategy };
       }
 
       let finalLink = `${window.location.origin}/download/${id}`;
@@ -441,10 +406,7 @@ function Upload() {
             partNumber: i + 1,
           });
 
-          uploadedPartsList.push({
-            PartNumber: i + 1,
-            ETag: etag,
-          });
+          uploadedPartsList.push({ PartNumber: i + 1, ETag: etag });
           setUploadedParts([...uploadedPartsList]);
           totalBytesUploaded += chunk.size;
         }
