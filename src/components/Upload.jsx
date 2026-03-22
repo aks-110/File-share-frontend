@@ -190,9 +190,19 @@ function Upload() {
 
         const etag = chunkRes.headers.etag || chunkRes.headers.ETag;
 
+        // await axios.post(
+        //   `${backendUrl}/save-progress`,
+        //   { id: meta.id, partNumber: i + 1 },
+        //   reqConfig,
+        // );
+
         await axios.post(
           `${backendUrl}/save-progress`,
-          { id: meta.id, partNumber: i + 1 },
+          {
+            id: meta.id || id, // Jo bhi ID wahan available ho
+            partNumber: i + 1,
+            etag: etag, // 🔥 YAHAN ETAG ADD KIYA HAI
+          },
           reqConfig,
         );
 
@@ -401,9 +411,15 @@ function Upload() {
           });
           const etag = chunkRes.headers.etag || chunkRes.headers.ETag;
 
+          // await axios.post(`${backendUrl}/save-progress`, {
+          //   id,
+          //   partNumber: i + 1,
+          // });
+
           await axios.post(`${backendUrl}/save-progress`, {
-            id,
+            id: meta.id || id, // id ya meta.id jo bhi context mein ho
             partNumber: i + 1,
+            etag: etag, //  FIX 4: Frontend ab ETag backend ko bhejega
           });
 
           uploadedPartsList.push({ PartNumber: i + 1, ETag: etag });
