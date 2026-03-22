@@ -153,7 +153,6 @@ function Upload() {
       const urls = res.data.urls;
       const completedParts = [...existingParts];
 
-      // 🔥 FIX: Setup initial progress bar correctly before loop starts
       let totalBytesUploaded = completedParts.length * meta.partsize;
       let initialPercent = Math.min(
         Math.round((totalBytesUploaded * 100) / activeFile.size),
@@ -190,18 +189,12 @@ function Upload() {
 
         const etag = chunkRes.headers.etag || chunkRes.headers.ETag;
 
-        // await axios.post(
-        //   `${backendUrl}/save-progress`,
-        //   { id: meta.id, partNumber: i + 1 },
-        //   reqConfig,
-        // );
-
         await axios.post(
           `${backendUrl}/save-progress`,
           {
-            id: meta.id || id, // Jo bhi ID wahan available ho
+            id: meta.id, // 🔥 FIX: executionResume ke pass meta.id hai
             partNumber: i + 1,
-            etag: etag, // 🔥 YAHAN ETAG ADD KIYA HAI
+            etag: etag,
           },
           reqConfig,
         );
@@ -284,7 +277,6 @@ function Upload() {
       return;
     }
 
-    // 🔥 CROSS-SESSION RESUME LOGIC INTERCEPTION
     const isPausedUpload =
       paused &&
       uploadMetaRef.current &&
@@ -299,9 +291,11 @@ function Upload() {
         const progRes = await axios.get(
           `${backendUrl}/get-progress?id=${meta.id}`,
         );
-        const serverParts = progRes.data.uploadedParts.map((num) => ({
-          PartNumber: num,
-        }));
+
+        // 🔥 ULTIMATE FIX: Yahan se map function hamesha ke liye hata diya gaya hai.
+        // Backend seedha ETag ke sath format bhej raha hai!
+        const serverParts = progRes.data.uploadedParts;
+
         setUploadedParts(serverParts);
         await executeResume(activeFile, meta, serverParts);
       } catch (err) {
@@ -411,15 +405,10 @@ function Upload() {
           });
           const etag = chunkRes.headers.etag || chunkRes.headers.ETag;
 
-          // await axios.post(`${backendUrl}/save-progress`, {
-          //   id,
-          //   partNumber: i + 1,
-          // });
-
           await axios.post(`${backendUrl}/save-progress`, {
-            id: meta.id || id, // id ya meta.id jo bhi context mein ho
+            id: id, // 🔥 FIX: Fresh upload hai toh id directly available hai
             partNumber: i + 1,
-            etag: etag, //  FIX 4: Frontend ab ETag backend ko bhejega
+            etag: etag,
           });
 
           uploadedPartsList.push({ PartNumber: i + 1, ETag: etag });
