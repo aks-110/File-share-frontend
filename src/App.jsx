@@ -11,7 +11,6 @@ function App() {
       <Toaster position="top-right" reverseOrder={false} />
       <div className="app-layout">
         <Navbar />
-        {/* main-content acts as the centering container */}
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Upload />} />
