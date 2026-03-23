@@ -13,7 +13,6 @@ function Download() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Auto-fill File ID from URL (when user opens link or QR)
   useEffect(() => {
     if (id) {
       setFileId(id);
@@ -30,11 +29,6 @@ function Download() {
     setStatus("Verifying credentials...");
 
     try {
-      // const res = await axios.post("http://localhost:3000/download", {
-      //   id: fileId,
-      //   password: password,
-      // });
-
       const res = await axios.post(`${backendUrl}/download`, {
         id: fileId,
         password: password,
@@ -45,17 +39,14 @@ function Download() {
         toast.error("Incorrect ID, password, or file expired.");
         return;
       }
-      
 
-      // create hidden anchor
       const link = document.createElement("a");
       link.href = res.data.downloadUrl;
-      link.setAttribute("download", ""); // let browser decide filename
+      link.setAttribute("download", "");
       document.body.appendChild(link);
       link.click();
       link.remove();
 
-      // NOW React still stays on page 
       setStatus("File is Downloading!");
       toast.success("Download started!");
     } catch (err) {

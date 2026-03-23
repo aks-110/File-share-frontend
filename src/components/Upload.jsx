@@ -192,7 +192,7 @@ function Upload() {
         await axios.post(
           `${backendUrl}/save-progress`,
           {
-            id: meta.id, // 🔥 FIX: executionResume ke pass meta.id hai
+            id: meta.id,
             partNumber: i + 1,
             etag: etag,
           },
@@ -292,8 +292,6 @@ function Upload() {
           `${backendUrl}/get-progress?id=${meta.id}`,
         );
 
-        // 🔥 ULTIMATE FIX: Yahan se map function hamesha ke liye hata diya gaya hai.
-        // Backend seedha ETag ke sath format bhej raha hai!
         const serverParts = progRes.data.uploadedParts;
 
         setUploadedParts(serverParts);
@@ -309,7 +307,6 @@ function Upload() {
       if (pendingResume || isPausedUpload) return;
     }
 
-    // --- FRESH UPLOAD LOGIC ---
     setPaused(false);
     isPausedRef.current = false;
     setLoading(true);
@@ -406,7 +403,7 @@ function Upload() {
           const etag = chunkRes.headers.etag || chunkRes.headers.ETag;
 
           await axios.post(`${backendUrl}/save-progress`, {
-            id: id, // 🔥 FIX: Fresh upload hai toh id directly available hai
+            id: id,
             partNumber: i + 1,
             etag: etag,
           });

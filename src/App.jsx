@@ -3,12 +3,12 @@ import { Toaster } from "react-hot-toast";
 import Navbar from "./components/Navbar";
 import Upload from "./components/Upload";
 import Download from "./components/Download";
-import "./App.css"; // Make sure your CSS is imported!
+import "./App.css"; 
 
 function App() {
   return (
     <BrowserRouter>
-    <Toaster position="top-right" reverseOrder={false} />
+      <Toaster position="top-right" reverseOrder={false} />
       <div className="app-layout">
         <Navbar />
         {/* main-content acts as the centering container */}
