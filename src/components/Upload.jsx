@@ -500,6 +500,23 @@ function Upload() {
     }
   };
 
+  // --- NEW KEYDOWN HANDLER ---
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      // Check if all fields are filled and the upload is not already in progress
+      if (
+        !password ||
+        (!file && !textInput.trim()) ||
+        loading ||
+        paused ||
+        pendingResume
+      ) {
+        return;
+      }
+      handleUpload();
+    }
+  };
+
   const expiryText = initialTime === 3600 ? "in 1 hour" : "in 1 day";
   const calculatedTextSize = formatSize(new Blob([textInput]).size);
 
@@ -675,6 +692,7 @@ function Upload() {
                     placeholder="Optional text file name (e.g. secure.txt)"
                     value={textFileName}
                     onChange={(e) => setTextFileName(e.target.value)}
+                    onKeyDown={handleKeyDown} // Trigger upload on Enter
                     style={{
                       width: "100%",
                       padding: "8px 12px",
@@ -762,6 +780,7 @@ function Upload() {
               placeholder="Set a password to unlock"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={handleKeyDown} // Trigger upload on Enter
               style={{
                 width: "100%",
                 padding: "12px",
